@@ -1,0 +1,171 @@
+name: Models CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  validate-models:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        lfs: true
+    
+    - name: Checkout LFS files
+      run: git lfs pull
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.11
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install torch transformers safetensors dspy-ai
+    
+    - name: Validate model structure
+      run: |
+        echo "Validating WIBA models structure..."
+        
+        # Check required directories exist
+        for dir in wibadetect wibaextract stance shared; do
+          if [ ! -d "$dir" ]; then
+            echo "❌ Missing directory: $dir"
+            exit 1
+          else
+            echo "✓ Directory exists: $dir"
+          fi
+        done
+        
+        # Check critical model files
+        if [ ! -f "wibadetect/adapter_model.safetensors" ]; then
+          echo "❌ Missing wibadetect model file"
+          exit 1
+        fi
+        
+        if [ ! -f "wibaextract/program.pkl" ]; then
+          echo "❌ Missing wibaextract program file"
+          exit 1
+        fi
+        
+        if [ ! -f "stance/adapter_model.safetensors" ]; then
+          echo "❌ Missing stance model file"
+          exit 1
+        fi
+        
+        echo "✓ All critical model files present"
+    
+    - name: Validate model configurations
+      run: |
+        python -c "
+        import json
+        import os
+        
+        # Validate adapter configs
+        for model in ['wibadetect', 'stance']:
+            config_path = f'{model}/adapter_config.json'
+            if os.path.exists(config_path):
+                with open(config_path) as f:
+                    config = json.load(f)
+                    assert 'peft_type' in config, f'Missing peft_type in {model}'
+                    assert 'task_type' in config, f'Missing task_type in {model}'
+                    print(f'✓ {model} configuration valid')
+            else:
+                print(f'❌ Missing config for {model}')
+                exit(1)
+        
+        # Validate DSPy metadata
+        if os.path.exists('wibaextract/metadata.json'):
+            with open('wibaextract/metadata.json') as f:
+                metadata = json.load(f)
+                print('✓ DSPy metadata valid')
+        
+        print('All model configurations validated successfully')
+        "
+    
+    - name: Test model loading utilities
+      run: |
+        python -c "
+        import sys
+        sys.path.append('shared/utils')
+        try:
+            from model_loader import WIBAModelLoader, ModelManager
+            print('✓ Model loading utilities import successfully')
+        except ImportError as e:
+            print(f'❌ Failed to import utilities: {e}')
+            exit(1)
+        "
+    
+    - name: Validate file sizes
+      run: |
+        echo "Checking model file sizes..."
+        
+        # Check if files are reasonable sizes (not empty, not too large)
+        wibadetect_size=$(stat -f%z wibadetect/adapter_model.safetensors 2>/dev/null || stat -c%s wibadetect/adapter_model.safetensors)
+        stance_size=$(stat -f%z stance/adapter_model.safetensors 2>/dev/null || stat -c%s stance/adapter_model.safetensors)
+        
+        if [ "$wibadetect_size" -lt 1000000 ]; then  # Less than 1MB
+          echo "❌ WibaDetect model seems too small: $wibadetect_size bytes"
+          exit 1
+        fi
+        
+        if [ "$stance_size" -lt 1000000 ]; then  # Less than 1MB
+          echo "❌ Stance model seems too small: $stance_size bytes"
+          exit 1
+        fi
+        
+        echo "✓ Model files have reasonable sizes"
+        echo "  - WibaDetect: $(numfmt --to=iec $wibadetect_size)B"
+        echo "  - Stance: $(numfmt --to=iec $stance_size)B"
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        lfs: true
+    
+    - name: Scan for sensitive data
+      run: |
+        echo "Scanning for potential sensitive data..."
+        
+        # Check for common patterns that shouldn't be in model repos
+        if grep -r "api_key\|password\|secret\|token" . --exclude-dir=.git --exclude="*.yml" --exclude="*.yaml" || true; then
+          echo "⚠️  Found potential sensitive data patterns - please review"
+        else
+          echo "✓ No obvious sensitive data patterns found"
+        fi
+
+  documentation:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Check documentation
+      run: |
+        echo "Validating documentation..."
+        
+        # Check for required documentation files
+        required_docs=("README.md" "wibadetect/README.md" "stance/README.md")
+        
+        for doc in "${required_docs[@]}"; do
+          if [ -f "$doc" ]; then
+            echo "✓ Documentation exists: $doc"
+          else
+            echo "❌ Missing documentation: $doc"
+            exit 1
+          fi
+        done
+        
+        # Check README has minimum content
+        if [ $(wc -l < README.md) -lt 10 ]; then
+          echo "❌ README.md seems too short"
+          exit 1
+        fi
+        
+        echo "✓ Documentation validation passed"

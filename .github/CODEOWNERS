@@ -1,0 +1,29 @@
+# CODEOWNERS for WIBA Models
+# This file defines who is responsible for code review in the models repository
+
+# Global ownership - all changes need approval from core team
+* @armaniii
+
+# Argument detection model
+/wibadetect/ @armaniii @ml-team @research-team
+
+# Topic extraction model
+/wibaextract/ @armaniii @nlp-team @research-team
+
+# Stance classification model
+/stance/ @armaniii @ml-team @research-team
+
+# Shared utilities and configurations
+/shared/ @armaniii @ml-team
+/shared/utils/ @armaniii @ml-team @backend-team
+/shared/configs/ @armaniii @ml-team @devops-team
+
+# Model documentation and evaluation
+/docs/ @armaniii @research-team @docs-team
+/scripts/ @armaniii @ml-team @research-team
+
+# CI/CD and GitHub workflows
+/.github/ @armaniii @devops-team
+
+# Repository documentation
+/README.md @armaniii @docs-team
